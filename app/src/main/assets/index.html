@@ -30,7 +30,7 @@ const C={bg:css.getPropertyValue('--bg').trim(),field:css.getPropertyValue('--fi
 const FD="Bungee, Impact, 'Arial Black', sans-serif", FB="'Chakra Petch', 'Segoe UI', system-ui, sans-serif";
 
 let best=0; try{best=+localStorage.getItem('bb-best')||0}catch(e){}
-let state='title', level, ballCount, launchX, nextX, angle, balls, bricks, pickups, toFire, fireTimer, collected, speed, particles, held={l:0,r:0}, holdF=0, shake=0, tick=0;
+let state='title', level=1, ballCount=1, launchX=W/2, nextX=null, angle=90, balls=[], bricks=[], pickups=[], toFire=0, fireTimer=0, collected=0, speed=1, particles=[], held={l:0,r:0}, holdF=0, shake=0, tick=0;
 
 function reset(){
   level=1; ballCount=1; launchX=W/2; nextX=null; angle=90; balls=[]; bricks=[]; pickups=[];
@@ -216,7 +216,7 @@ cv.addEventListener('pointercancel',()=>drag=false);
 addEventListener('resize',resize);
 resize(); cv.focus();
 let last=performance.now(),acc=0;
-(function loop(t){acc+=Math.min(100,t-last);last=t;while(acc>=16.67){step();acc-=16.67}draw();requestAnimationFrame(loop)})(last);
+(function loop(t){requestAnimationFrame(loop);acc+=Math.min(100,t-last);last=t;try{while(acc>=16.67){step();acc-=16.67}draw()}catch(err){acc=0;console.error(err)}})(last);
 })();
 </script>
 
