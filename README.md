@@ -7,12 +7,11 @@ An aim-and-shoot brick breaker built for the Fire TV remote. Aim your volley, br
 | Remote | Action |
 | --- | --- |
 | ◀ ▶ | Aim |
-| OK (centre) | Fire |
+| ▲ or OK (centre) | Fire, and start a game |
 | ▼ | Recall balls |
-| ▲ or Play/Pause | Speed up the shot |
+| ▲, OK or Play/Pause during a shot | Speed up |
 | Back | Exit |
 
-Touch screens: drag to aim, release to fire.
 
 ## Install on Fire TV
 

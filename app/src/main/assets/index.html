@@ -20,7 +20,7 @@ html,body{height:100%;margin:0;background:var(--bg);overflow:hidden}
 body{padding-left:max(0px,env(safe-area-inset-left,0px));padding-right:max(0px,env(safe-area-inset-right,0px));color:var(--ink);font-family:var(--body)}
 canvas{display:block;width:100%;height:100%;touch-action:none;outline:none}
 </style>
-<canvas id="game" tabindex="0" aria-label="Brick Barrage game. Left and right to aim, OK to fire."></canvas>
+<canvas id="game" tabindex="0" aria-label="Brick Barrage game. Left and right to aim, up to fire."></canvas>
 <script>
 (()=>{
 const cv=document.getElementById('game'),cx=cv.getContext('2d');
@@ -161,11 +161,11 @@ function draw(){
   }
   cx.restore();
 
-  if(state==='title') panel('BRICK\nBARRAGE','Aim, fire, and clear the wall\nbefore it reaches the line.','PRESS OK TO PLAY');
-  if(state==='over') panel('WALL\nWINS',`You survived ${level-1} round${level-1===1?'':'s'}`+(level-1>=best&&level>1?'\nNew best!':`\nBest: ${best}`),'PRESS OK TO PLAY AGAIN');
+  if(state==='title') panel('BRICK\nBARRAGE','Aim, fire, and clear the wall\nbefore it reaches the line.','PRESS ▲ TO PLAY');
+  if(state==='over') panel('WALL\nWINS',`You survived ${level-1} round${level-1===1?'':'s'}`+(level-1>=best&&level>1?'\nNew best!':`\nBest: ${best}`),'PRESS ▲ TO PLAY AGAIN');
   cx.restore();
 
-  text(state==='fly'?'▼ recall balls   ·   ▲ speed up':'◀ ▶ aim   ·   OK fire   ·   tap & drag on touch',W/2,OY+FH+34,22,FB,C.dim);
+  text(state==='fly'?'▼ recall balls   ·   ▲ speed up':'◀ ▶ aim   ·   ▲ or OK fire',W/2,OY+FH+34,22,FB,C.dim);
 }
 function drawAim(){
   const a=angle*Math.PI/180; let x=launchX,y=LAUNCHY,vx=Math.cos(a),vy=-Math.sin(a),bounces=0;
@@ -187,18 +187,20 @@ function panel(title,body,cta){
 }
 
 // ---------- input ----------
-const isOK=k=>k==='Enter'||k===' '||k==='Select'||k==='Accept';
-addEventListener('keydown',e=>{
-  const k=e.key;
-  if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' ','Enter'].includes(k))e.preventDefault();
-  if(state==='title'||state==='over'){if(isOK(k))reset();return}
-  if(k==='ArrowLeft')held.l=1;
-  if(k==='ArrowRight')held.r=1;
-  if(isOK(k))fire();
-  if(k==='ArrowDown')recall();
-  if((k==='ArrowUp'||k==='MediaPlayPause'||k==='MediaFastForward')&&state==='fly')speed=speed>=3?1:speed+1;
-});
-addEventListener('keyup',e=>{if(e.key==='ArrowLeft')held.l=0;if(e.key==='ArrowRight')held.r=0});
+// One handler for every remote button. The Android app calls window.bbKey directly.
+function handle(name,down){
+  if(name==='left'){held.l=down?1:0;return}
+  if(name==='right'){held.r=down?1:0;return}
+  if(!down)return;
+  if(state==='title'||state==='over'){if(name==='ok'||name==='up'||name==='ff')reset();return}
+  if(state==='aim'&&(name==='ok'||name==='up'||name==='ff'))fire();
+  else if(state==='fly'){if(name==='down')recall();else if(name==='up'||name==='ok'||name==='ff')speed=speed>=3?1:speed+1}
+}
+window.bbKey=handle;
+const KEYMAP={ArrowLeft:'left',ArrowRight:'right',ArrowUp:'up',ArrowDown:'down',Enter:'ok',' ':'ok',Select:'ok',Accept:'ok',MediaPlayPause:'ff',MediaPlay:'ff',MediaFastForward:'ff'};
+function keyName(e){return KEYMAP[e.key]||({13:'ok',23:'ok',179:'ff',228:'ff'})[e.keyCode]}
+addEventListener('keydown',e=>{const n=keyName(e);if(!n)return;e.preventDefault();if(e.repeat&&n!=='left'&&n!=='right')return;handle(n,true)});
+addEventListener('keyup',e=>{const n=keyName(e);if(n){e.preventDefault();handle(n,false)}});
 
 let drag=false;
 function toField(e){const r=cv.getBoundingClientRect();return{x:(e.clientX-r.left-ox)/scale,y:(e.clientY-r.top-oy)/scale-OY}}
