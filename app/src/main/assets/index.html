@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+</head>
+<body>
+<title>Brick Barrage</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Chakra+Petch:wght@500;700&display=swap">
+<style>
+/* Layout: one full-screen canvas; portrait playfield centred, scaled to fit TV or phone */
+:root{
+  --bg:#0b0d18; --field:#131729; --line:#2a3152; --ink:#eef1ff; --dim:#8a92b8; --ring:#5dffb0;
+  --display:"Bungee","Impact","Arial Black",sans-serif;
+  --body:"Chakra Petch","Segoe UI",system-ui,sans-serif;
+  color-scheme:dark;
+}
+html,body{height:100%;margin:0;background:var(--bg);overflow:hidden}
+body{padding-left:max(0px,env(safe-area-inset-left,0px));padding-right:max(0px,env(safe-area-inset-right,0px));color:var(--ink);font-family:var(--body)}
+canvas{display:block;width:100%;height:100%;touch-action:none;outline:none}
+</style>
+<canvas id="game" tabindex="0" aria-label="Brick Barrage game. Left and right to aim, OK to fire."></canvas>
+<script>
+(()=>{
+const cv=document.getElementById('game'),cx=cv.getContext('2d');
+const W=700, OY=110, FH=1000, LH=1170, COLS=7, CELL=100, R=12, LAUNCHY=970;
+const css=getComputedStyle(document.documentElement);
+const C={bg:css.getPropertyValue('--bg').trim(),field:css.getPropertyValue('--field').trim(),line:css.getPropertyValue('--line').trim(),ink:css.getPropertyValue('--ink').trim(),dim:css.getPropertyValue('--dim').trim(),ring:css.getPropertyValue('--ring').trim()};
+const FD="Bungee, Impact, 'Arial Black', sans-serif", FB="'Chakra Petch', 'Segoe UI', system-ui, sans-serif";
+
+let best=0; try{best=+localStorage.getItem('bb-best')||0}catch(e){}
+let state='title', level, ballCount, launchX, nextX, angle, balls, bricks, pickups, toFire, fireTimer, collected, speed, particles, held={l:0,r:0}, holdF=0, shake=0, tick=0;
+
+function reset(){
+  level=1; ballCount=1; launchX=W/2; nextX=null; angle=90; balls=[]; bricks=[]; pickups=[];
+  collected=0; speed=1; particles=[]; spawnRow(); shiftDown(); state='aim';
+}
+function spawnRow(){
+  const cols=[...Array(COLS).keys()].sort(()=>Math.random()-.5);
+  const n=Math.max(1,Math.min(COLS-1,Math.round(2+Math.random()*3+Math.min(level/12,2))));
+  for(let i=0;i<n;i++){const hp=Math.random()<.18?level*2:level;bricks.push({c:cols[i],r:-1,hp,max:hp})}
+  pickups.push({c:cols[n],r:-1});
+}
+function shiftDown(){
+  bricks.forEach(b=>b.r++); pickups.forEach(p=>p.r++);
+  pickups=pickups.filter(p=>p.r<9);
+  if(bricks.some(b=>b.r>=8)){gameOver()}
+}
+function gameOver(){
+  state='over'; const s=level-1;
+  if(s>best){best=s;try{localStorage.setItem('bb-best',best)}catch(e){}}
+}
+function fire(){
+  if(state!=='aim')return;
+  const a=angle*Math.PI/180; balls=[];
+  toFire=ballCount; fireTimer=0; collected=0; nextX=null;
+  balls.dir={x:Math.cos(a),y:-Math.sin(a)}; state='fly';
+}
+function endTurn(){
+  ballCount+=collected; launchX=nextX??launchX; level++;
+  spawnRow(); shiftDown(); if(state!=='over')state='aim';
+}
+function recall(){
+  if(state!=='fly')return;
+  toFire=0; balls.forEach(b=>{if(!b.landed){b.landed=true;b.y=LAUNCHY}});
+  if(nextX===null)nextX=launchX;
+}
+function brickRect(b){return{x:b.c*CELL+5,y:b.r*CELL+5,w:CELL-10,h:CELL-10}}
+function hitBricks(x,y){
+  let hit=false;
+  for(const b of bricks){const q=brickRect(b);
+    if(x+R>q.x&&x-R<q.x+q.w&&y+R>q.y&&y-R<q.y+q.h){hit=true;b.hp--;b.flash=6;if(b.hp<=0)burst(b)}}
+  if(hit)bricks=bricks.filter(b=>b.hp>0);
+  return hit;
+}
+function burst(b){
+  const q=brickRect(b),hue=brickHue(b);
+  for(let i=0;i<14;i++)particles.push({x:q.x+q.w/2,y:q.y+q.h/2,vx:(Math.random()-.5)*14,vy:(Math.random()-.5)*14,life:30,hue});
+  shake=Math.min(shake+3,8);
+}
+function brickHue(b){const t=Math.min(1,b.max/(level*1.6));return 185-t*165}
+
+function step(){
+  tick++;
+  if(state==='aim'){
+    const d=held.r-held.l;
+    if(d){holdF++;angle-=d*(0.5+Math.min(holdF,50)*0.035);angle=Math.max(8,Math.min(172,angle))}else holdF=0;
+  }
+  if(state==='fly'){
+    for(let s=0;s<speed;s++){
+      if(toFire>0&&--fireTimer<=0){balls.push({x:launchX,y:LAUNCHY,vx:balls.dir.x,vy:balls.dir.y,landed:false});toFire--;fireTimer=4}
+      const SP=17,n=4;
+      for(const b of balls){ if(b.landed)continue;
+        for(let k=0;k<n;k++){
+          const dx=b.vx*SP/n, dy=b.vy*SP/n;
+          b.x+=dx; if(b.x<R){b.x=R;b.vx=Math.abs(b.vx)} else if(b.x>W-R){b.x=W-R;b.vx=-Math.abs(b.vx)}
+          if(hitBricks(b.x,b.y)){b.x-=dx;b.vx=-b.vx}
+          b.y+=dy; if(b.y<R){b.y=R;b.vy=Math.abs(b.vy)}
+          if(hitBricks(b.x,b.y)){b.y-=dy;b.vy=-b.vy}
+          for(const p of pickups){const px=p.c*CELL+50,py=p.r*CELL+50;
+            if(!p.got&&Math.hypot(b.x-px,b.y-py)<R+26){p.got=true;collected++}}
+          if(b.vy>0&&b.y>=LAUNCHY){b.y=LAUNCHY;b.landed=true;if(nextX===null)nextX=b.x;break}
+        }
+      }
+      pickups=pickups.filter(p=>!p.got);
+      if(toFire===0&&balls.every(b=>b.landed)){endTurn();break}
+    }
+  }
+  particles.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=.5;p.life--}); particles=particles.filter(p=>p.life>0);
+  bricks&&bricks.forEach(b=>{if(b.flash)b.flash--});
+  if(shake>0)shake*=.85;
+}
+
+// ---------- drawing ----------
+let scale=1,ox=0,oy=0,dpr=1;
+function resize(){
+  dpr=Math.min(window.devicePixelRatio||1,2);
+  const w=cv.clientWidth,h=cv.clientHeight; cv.width=w*dpr; cv.height=h*dpr;
+  scale=Math.min(w/(W+40),h/LH); ox=(w-W*scale)/2; oy=(h-LH*scale)/2;
+}
+function rr(x,y,w,h,r){cx.beginPath();cx.roundRect?cx.roundRect(x,y,w,h,r):cx.rect(x,y,w,h)}
+function text(t,x,y,size,font,color,align='center'){cx.font=`${size}px ${font}`;cx.fillStyle=color;cx.textAlign=align;cx.textBaseline='middle';cx.fillText(t,x,y)}
+
+function draw(){
+  cx.setTransform(1,0,0,1,0,0); cx.fillStyle=C.bg; cx.fillRect(0,0,cv.width,cv.height);
+  const sx=(Math.random()-.5)*shake, sy=(Math.random()-.5)*shake;
+  cx.setTransform(scale*dpr,0,0,scale*dpr,(ox+sx)*dpr,(oy+sy)*dpr);
+
+  // HUD
+  text('BRICK BARRAGE',0,32,30,FD,C.ink,'left');
+  text(`BEST ${best}`,W,32,26,FB,C.dim,'right');
+  if(state!=='title'){
+    text('ROUND',0,82,20,FB,C.dim,'left'); text(String(level),92,80,40,FD,C.ink,'left');
+    text(`BALLS  ${ballCount}`,W,82,26,FB,C.ink,'right');
+    if(state==='fly'&&speed>1) text(`${speed}× SPEED`,W/2,82,22,FB,C.ring);
+  }
+
+  cx.save(); cx.translate(0,OY);
+  rr(0,0,W,FH,14); cx.fillStyle=C.field; cx.fill(); cx.strokeStyle=C.line; cx.lineWidth=2; cx.stroke();
+  cx.save(); rr(0,0,W,FH,14); cx.clip();
+  // danger line
+  cx.strokeStyle='rgba(255,90,120,.35)'; cx.setLineDash([10,10]); cx.beginPath(); cx.moveTo(0,800); cx.lineTo(W,800); cx.stroke(); cx.setLineDash([]);
+
+  if(state!=='title'){
+    for(const p of pickups){const px=p.c*CELL+50,py=p.r*CELL+50,pulse=4*Math.sin(tick/8);
+      cx.beginPath();cx.arc(px,py,20+pulse,0,7);cx.strokeStyle=C.ring;cx.lineWidth=5;cx.stroke();
+      text('+1',px,py+1,18,FB,C.ring)}
+    for(const b of bricks){const q=brickRect(b),h=brickHue(b);
+      rr(q.x,q.y,q.w,q.h,12); cx.fillStyle=b.flash?'#ffffff':`hsl(${h} 85% 58%)`; cx.fill();
+      rr(q.x,q.y+q.h-12,q.w,12,[0,0,12,12]); cx.fillStyle=`hsla(${h},70%,30%,.55)`; cx.fill();
+      text(String(b.hp),q.x+q.w/2,q.y+q.h/2-3,b.hp>999?28:38,FB,'#10121f')}
+    for(const p of particles){cx.globalAlpha=p.life/30;cx.fillStyle=`hsl(${p.hue} 90% 62%)`;cx.fillRect(p.x-4,p.y-4,8,8)}
+    cx.globalAlpha=1;
+
+    if(state==='aim') drawAim();
+    cx.fillStyle=C.ink;
+    if(state==='fly'){for(const b of balls){if(b.landed&&nextX===null)continue;cx.beginPath();cx.arc(b.landed?(nextX??b.x):b.x,b.y,R,0,7);cx.fill()}
+      if(toFire>0){cx.beginPath();cx.arc(launchX,LAUNCHY,R,0,7);cx.fill();text(`×${toFire}`,launchX,LAUNCHY+24,18,FB,C.dim)}}
+    if(state==='aim'||state==='over'){cx.beginPath();cx.arc(launchX,LAUNCHY,R,0,7);cx.fill();text(`×${ballCount}`,launchX,LAUNCHY+24,18,FB,C.dim)}
+  }
+  cx.restore();
+
+  if(state==='title') panel('BRICK\nBARRAGE','Aim, fire, and clear the wall\nbefore it reaches the line.','PRESS OK TO PLAY');
+  if(state==='over') panel('WALL\nWINS',`You survived ${level-1} round${level-1===1?'':'s'}`+(level-1>=best&&level>1?'\nNew best!':`\nBest: ${best}`),'PRESS OK TO PLAY AGAIN');
+  cx.restore();
+
+  text(state==='fly'?'▼ recall balls   ·   ▲ speed up':'◀ ▶ aim   ·   OK fire   ·   tap & drag on touch',W/2,OY+FH+34,22,FB,C.dim);
+}
+function drawAim(){
+  const a=angle*Math.PI/180; let x=launchX,y=LAUNCHY,vx=Math.cos(a),vy=-Math.sin(a),bounces=0;
+  cx.fillStyle=C.ink;
+  for(let i=0;i<180;i++){
+    x+=vx*7;y+=vy*7;
+    if(x<R||x>W-R){vx=-vx;x=Math.max(R,Math.min(W-R,x));if(++bounces>1)break}
+    if(y<R)break;
+    if(bricks.some(b=>{const q=brickRect(b);return x+R>q.x&&x-R<q.x+q.w&&y+R>q.y&&y-R<q.y+q.h}))break;
+    if(i%4===0&&i>2){cx.globalAlpha=Math.max(.15,1-i/180);cx.beginPath();cx.arc(x,y,4,0,7);cx.fill()}
+  }
+  cx.globalAlpha=1;
+}
+function panel(title,body,cta){
+  cx.fillStyle='rgba(11,13,24,.82)'; cx.fillRect(0,0,W,FH);
+  title.split('\n').forEach((l,i)=>text(l,W/2,330+i*96,96,FD,i?'hsl(330 85% 62%)':'hsl(185 85% 58%)'));
+  body.split('\n').forEach((l,i)=>text(l,W/2,560+i*40,28,FB,C.ink));
+  if(Math.floor(tick/30)%2===0) text(cta,W/2,720,30,FD,C.ring);
+}
+
+// ---------- input ----------
+const isOK=k=>k==='Enter'||k===' '||k==='Select'||k==='Accept';
+addEventListener('keydown',e=>{
+  const k=e.key;
+  if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' ','Enter'].includes(k))e.preventDefault();
+  if(state==='title'||state==='over'){if(isOK(k))reset();return}
+  if(k==='ArrowLeft')held.l=1;
+  if(k==='ArrowRight')held.r=1;
+  if(isOK(k))fire();
+  if(k==='ArrowDown')recall();
+  if((k==='ArrowUp'||k==='MediaPlayPause'||k==='MediaFastForward')&&state==='fly')speed=speed>=3?1:speed+1;
+});
+addEventListener('keyup',e=>{if(e.key==='ArrowLeft')held.l=0;if(e.key==='ArrowRight')held.r=0});
+
+let drag=false;
+function toField(e){const r=cv.getBoundingClientRect();return{x:(e.clientX-r.left-ox)/scale,y:(e.clientY-r.top-oy)/scale-OY}}
+function aimAt(p){const dx=p.x-launchX,dy=LAUNCHY-p.y;if(dy<10)return;angle=Math.max(8,Math.min(172,Math.atan2(dy,dx)*180/Math.PI))}
+cv.addEventListener('pointerdown',e=>{cv.focus();
+  if(state==='title'||state==='over'){reset();return}
+  if(state==='fly'){recall();return}
+  drag=true;aimAt(toField(e))});
+cv.addEventListener('pointermove',e=>{if(drag)aimAt(toField(e))});
+cv.addEventListener('pointerup',()=>{if(drag){drag=false;fire()}});
+cv.addEventListener('pointercancel',()=>drag=false);
+
+addEventListener('resize',resize);
+resize(); cv.focus();
+let last=performance.now(),acc=0;
+(function loop(t){acc+=Math.min(100,t-last);last=t;while(acc>=16.67){step();acc-=16.67}draw();requestAnimationFrame(loop)})(last);
+})();
+</script>
+
+</body>
+</html>
